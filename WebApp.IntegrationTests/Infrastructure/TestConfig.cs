@@ -24,8 +24,26 @@ public sealed class TestConfig
         AllowTrailingCommas = true,
     };
 
-    public static string PathInOutput(string relative) =>
-        Path.Combine(AppContext.BaseDirectory, relative);
+    /// Prefers the file in the project folder (so a fresh AppInventory run or a settings edit
+    /// is picked up without rebuilding), falling back to the copy in the build output.
+    public static string PathInOutput(string relative)
+    {
+        if (ProjectDir != null)
+        {
+            var source = Path.Combine(ProjectDir, relative);
+            if (File.Exists(source)) return source;
+        }
+        return Path.Combine(AppContext.BaseDirectory, relative);
+    }
+
+    static readonly string? ProjectDir = FindProjectDir();
+
+    static string? FindProjectDir()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+            if (dir.GetFiles("*.IntegrationTests.csproj").Length > 0) return dir.FullName;
+        return null;
+    }
 
     static TestConfig Load()
     {
