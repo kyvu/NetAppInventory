@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+test-results/
+# Never commit real manifests or local settings overrides
+WebApp.IntegrationTests/manifests/*.json
+*.local.json

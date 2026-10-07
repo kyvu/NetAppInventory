@@ -1,0 +1,35 @@
+{
+  // Your local site URL (IIS Express: see Properties/launchSettings.json > iisSettings > sslPort)
+  "BaseUrl": "https://localhost:44300",
+
+  // TEST/DEV database only. Windows auth – no password in here.
+  "SqlConnection": "Server=localhost;Database=YOUR_TEST_DB;Integrated Security=True;TrustServerCertificate=True",
+
+  // Output of AppInventory, copied into the manifests folder
+  "AppManifest": "manifests/manifest-app.json",
+  "SqlManifest": "manifests/manifest-sql.json",
+
+  // Playwright: "msedge" uses the installed Edge – nothing to download
+  "BrowserChannel": "msedge",
+  "Headless": true,
+  "SlowMoMs": 0,
+
+  // Pages for the example UI tests. Leave empty to skip. Use test data only.
+  "UiPages": {
+    "MaskedFieldGrid": "",   // a paged grid with masked fields + reveal buttons
+    "ModalFormPage": ""      // a page with a modal that contains a form + grid
+  },
+
+  // Selectors for the example UI tests – change to match your markup.
+  "Selectors": {
+    "RevealToggle": ".reveal-toggle",
+    "MaskedField": "input.masked-field",
+    "NextPage": ".dataTables_paginate .next:not(.disabled)",
+    "ModalOpen": "[data-modal]",
+    "Modal": ".modal.show, .modal.in",
+    "ModalGrid": "table",
+    "ModalAdd": "[data-testid=add]",
+    "ModalText": "textarea",
+    "ModalSave": "[type=submit]"
+  }
+}

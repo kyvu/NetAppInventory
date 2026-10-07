@@ -1,0 +1,7 @@
+{
+  // Actions with REQUIRED parameters are skipped by the smoke tests unless you add sample values here.
+  // Key = "Controller/Action", value = query string (use test record ids).
+  // The smoke test output lists every skipped action so you know what to fill in.
+  "Orders/Details": "id=1",
+  "Customers/Edit": "id=1"
+}
