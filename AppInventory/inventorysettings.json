@@ -1,0 +1,17 @@
+{
+  // Compiled web app DLL (build the web app first so this is current)
+  "Assembly": "C:\\Dev\\MyApp\\bin\\Debug\\net10.0\\MyApp.dll",
+
+  // Views folder to scan (optional)
+  "Views": "C:\\Dev\\MyApp\\Views",
+
+  // TEST/DEV database, Windows auth (leave as-is to skip the SQL scan)
+  "SqlConnection": "Server=localhost;Database=YOUR_TEST_DB;Integrated Security=True;TrustServerCertificate=True",
+  "CheckSqlHealth": true,
+
+  // Where manifests go. Default = the test project's manifests folder.
+  "OutputFolder": "..\\..\\..\\..\\WebApp.IntegrationTests\\manifests",
+
+  // Keep the console window open at the end (for double-click / F5)
+  "PauseAtEnd": true
+}
