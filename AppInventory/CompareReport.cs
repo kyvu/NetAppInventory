@@ -165,11 +165,18 @@ public static class CompareReport
         bool wasOpen = o.Count == 0 || (o.Count == 1 && o.Contains("AUTHENTICATED"));
         bool nowOpen = n.Count == 0 || (n.Count == 1 && n.Contains("AUTHENTICATED"));
 
+        bool oldHadRoles = o.Any(t => t.StartsWith("ROLES:"));
+        // Adding a POLICY, or adding ROLES where there were none, narrows access.
+        // Adding ROLES to an existing role list widens it (handled below as MORE ACCESS).
+        bool onlyTightening = !rolesRemoved && removed.All(t => t == "AUTHENTICATED") && added.Count > 0 &&
+                              added.All(t => t.StartsWith("POLICY:") || (t.StartsWith("ROLES:") && !oldHadRoles));
+
         string impact =
             anonAdded || (nowOpen && !wasOpen) ? "⚠ MORE ACCESS (restriction removed)" :
             usersRemoved && !added.Any(t => t.StartsWith("USERS:") || t.StartsWith("ROLES:")) ? "⚠ CHECK: named-user list replaced" :
+            wasOpen && !nowOpen ? "tighter (was open to any logged-in user)" :
+            onlyTightening ? "tighter (requirement added)" :
             rolesAdded && !rolesRemoved ? "⚠ MORE ACCESS (roles added)" :
-            wasOpen && !nowOpen ? "tighter (was open)" :
             rolesRemoved && !rolesAdded ? "less access (roles removed – users may get 403)" :
             "changed";
 
