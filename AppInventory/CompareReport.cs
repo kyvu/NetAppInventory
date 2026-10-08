@@ -41,7 +41,7 @@ public static class CompareReport
         foreach (var key in oldCtrls.Keys.Intersect(newCtrls.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k))
         {
             var o = NormAuth(oldCtrls[key].Authorize); var n = NormAuth(newCtrls[key].Authorize);
-            if (o != n) authChanges.Add($"{key} (controller): [{Show(o)}] -> [{Show(n)}]");
+            if (o != n) authChanges.Add($"{key} (controller): {AuthDiff(o, n)}");
         }
 
         foreach (var key in oldCtrls.Keys.Intersect(newCtrls.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k))
@@ -60,7 +60,7 @@ public static class CompareReport
 
                 var oAuth = NormAuth(o.Authorize) + (o.AllowAnonymous ? " +AllowAnonymous" : "");
                 var nAuth = NormAuth(n.Authorize) + (n.AllowAnonymous ? " +AllowAnonymous" : "");
-                if (oAuth != nAuth) authChanges.Add($"{key}/{a}: [{Show(oAuth)}] -> [{Show(nAuth)}]");
+                if (oAuth != nAuth) authChanges.Add($"{key}/{a}: {AuthDiff(oAuth, nAuth)}");
 
                 if (!ParamNames(o).SetEquals(ParamNames(n)))
                     paramChanges.Add($"{key}/{a}: ({Sig(o)}) -> ({Sig(n)})");
@@ -150,6 +150,50 @@ public static class CompareReport
     }
 
     static string Show(string normalized) => normalized.Length == 0 ? "none" : normalized;
+
+    /// Turns two normalized auth strings into "removed/added" items with a plain-English impact tag.
+    static string AuthDiff(string oldAuth, string newAuth)
+    {
+        var o = Tokens(oldAuth); var n = Tokens(newAuth);
+        var removed = o.Except(n).OrderBy(x => x).ToList();
+        var added = n.Except(o).OrderBy(x => x).ToList();
+
+        bool rolesAdded = added.Any(t => t.StartsWith("ROLES:"));
+        bool rolesRemoved = removed.Any(t => t.StartsWith("ROLES:"));
+        bool usersRemoved = removed.Any(t => t.StartsWith("USERS:"));
+        bool anonAdded = added.Contains("ALLOWANONYMOUS");
+        bool wasOpen = o.Count == 0 || (o.Count == 1 && o.Contains("AUTHENTICATED"));
+        bool nowOpen = n.Count == 0 || (n.Count == 1 && n.Contains("AUTHENTICATED"));
+
+        string impact =
+            anonAdded || (nowOpen && !wasOpen) ? "⚠ MORE ACCESS (restriction removed)" :
+            usersRemoved && !added.Any(t => t.StartsWith("USERS:") || t.StartsWith("ROLES:")) ? "⚠ CHECK: named-user list replaced" :
+            rolesAdded && !rolesRemoved ? "⚠ MORE ACCESS (roles added)" :
+            wasOpen && !nowOpen ? "tighter (was open)" :
+            rolesRemoved && !rolesAdded ? "less access (roles removed – users may get 403)" :
+            "changed";
+
+        var parts = new List<string>();
+        if (removed.Count > 0) parts.Add("removed " + string.Join(", ", removed.Select(Pretty)));
+        if (added.Count > 0) parts.Add("added " + string.Join(", ", added.Select(Pretty)));
+        return $"{impact} — {string.Join("; ", parts)}";
+    }
+
+    static HashSet<string> Tokens(string normalized)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in normalized.Replace("+AllowAnonymous", ";ALLOWANONYMOUS", StringComparison.OrdinalIgnoreCase).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var eq = raw.IndexOf('=');
+            if (eq < 0) { set.Add(raw.ToUpperInvariant()); continue; }
+            var key = raw[..eq];
+            foreach (var v in raw[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                set.Add($"{key}:{v}");
+        }
+        return set;
+    }
+
+    static string Pretty(string token) => token.Replace(":", " ");
 
     static HashSet<string> ParamNames(ActionInfo a) =>
         a.Parameters.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
