@@ -29,12 +29,20 @@ public static class CompareReport
         var oldCtrls = oldApp.Controllers.ToDictionary(c => Key(c.Area, c.Name), StringComparer.OrdinalIgnoreCase);
         var newCtrls = newApp.Controllers.ToDictionary(c => Key(c.Area, c.Name), StringComparer.OrdinalIgnoreCase);
 
-        var missingCtrls = oldCtrls.Keys.Except(newCtrls.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k).ToList();
-        var addedCtrls = newCtrls.Keys.Except(oldCtrls.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k).ToList();
+        var missingCtrls = oldCtrls.Keys.Except(newCtrls.Keys, StringComparer.OrdinalIgnoreCase).Where(k => oldCtrls[k].Actions.Count > 0).OrderBy(k => k).ToList();
+        var addedCtrls = newCtrls.Keys.Except(oldCtrls.Keys, StringComparer.OrdinalIgnoreCase).Where(k => newCtrls[k].Actions.Count > 0).OrderBy(k => k).ToList();
 
         var missingActions = new List<string>();
         var addedActions = new List<string>();
-        var changedActions = new List<string>();
+        var authChanges = new List<string>();
+        var paramChanges = new List<string>();
+
+        // Controller-level auth changes
+        foreach (var key in oldCtrls.Keys.Intersect(newCtrls.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k))
+        {
+            var o = NormAuth(oldCtrls[key].Authorize); var n = NormAuth(newCtrls[key].Authorize);
+            if (o != n) authChanges.Add($"{key} (controller): [{Show(o)}] -> [{Show(n)}]");
+        }
 
         foreach (var key in oldCtrls.Keys.Intersect(newCtrls.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k))
         {
@@ -49,22 +57,14 @@ public static class CompareReport
             foreach (var a in oldActs.Keys.Intersect(newActs.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(x => x))
             {
                 var o = oldActs[a]; var n = newActs[a];
-                var diffs = new List<string>();
-                if (!ParamNames(o).SetEquals(ParamNames(n)))
-                    diffs.Add($"params: ({Sig(o)}) -> ({Sig(n)})");
-                var oAuth = string.Join(";", o.Authorize); var nAuth = string.Join(";", n.Authorize);
-                if (!string.Equals(oAuth, nAuth, StringComparison.OrdinalIgnoreCase))
-                    diffs.Add($"auth: [{oAuth}] -> [{nAuth}]");
-                if (diffs.Count > 0) changedActions.Add($"{key}/{a}: {string.Join("; ", diffs)}");
-            }
-        }
 
-        // Controller-level [Authorize] changes
-        foreach (var key in oldCtrls.Keys.Intersect(newCtrls.Keys, StringComparer.OrdinalIgnoreCase).OrderBy(k => k))
-        {
-            var oAuth = string.Join(";", oldCtrls[key].Authorize); var nAuth = string.Join(";", newCtrls[key].Authorize);
-            if (!string.Equals(oAuth, nAuth, StringComparison.OrdinalIgnoreCase))
-                changedActions.Insert(0, $"{key} (controller): auth [{oAuth}] -> [{nAuth}]");
+                var oAuth = NormAuth(o.Authorize) + (o.AllowAnonymous ? " +AllowAnonymous" : "");
+                var nAuth = NormAuth(n.Authorize) + (n.AllowAnonymous ? " +AllowAnonymous" : "");
+                if (oAuth != nAuth) authChanges.Add($"{key}/{a}: [{Show(oAuth)}] -> [{Show(nAuth)}]");
+
+                if (!ParamNames(o).SetEquals(ParamNames(n)))
+                    paramChanges.Add($"{key}/{a}: ({Sig(o)}) -> ({Sig(n)})");
+            }
         }
 
         int oldCount = oldApp.Controllers.Sum(c => c.Actions.Count), newCount = newApp.Controllers.Sum(c => c.Actions.Count);
@@ -72,14 +72,16 @@ public static class CompareReport
         sb.AppendLine($"- Controllers: {oldCtrls.Count} legacy → {newCtrls.Count} current");
         sb.AppendLine($"- Actions: {oldCount} legacy → {newCount} current");
         sb.AppendLine($"- Missing controllers: {missingCtrls.Count}, missing actions: {missingActions.Count}");
-        sb.AppendLine($"- Changed actions (params/auth): {changedActions.Count}");
+        sb.AppendLine($"- Authorization changes: {authChanges.Count}  <-- review these first");
+        sb.AppendLine($"- Parameter changes: {paramChanges.Count}");
         sb.AppendLine($"- New in current: {addedCtrls.Count} controllers, {addedActions.Count} actions");
         sb.AppendLine();
 
+        Section(sb, "Authorization changes (roles/users/policy differ – attribute name and role casing ignored)", authChanges);
         Section(sb, "Missing controllers (in legacy, not in current)", missingCtrls.Select(k =>
             $"{k}  ({oldCtrls[k].Actions.Count} actions)"));
         Section(sb, "Missing actions (in legacy, not in current)", missingActions);
-        Section(sb, "Changed actions (review: parameters or authorization differ)", changedActions);
+        Section(sb, "Parameter changes (names differ)", paramChanges);
         Section(sb, "New controllers (only in current)", addedCtrls);
         Section(sb, "New actions (only in current)", addedActions);
     }
@@ -120,6 +122,34 @@ public static class CompareReport
         }
         return d;
     }
+
+
+    /// Normalizes [CustomAuthorize Roles=SystemAdmin, ITSystemAdmin] and [Authorize Roles=ITSYSTEMADMIN,SYSTEMADMIN]
+    /// to the same string: attribute name ignored, keys/values upper-cased, role/user lists sorted.
+    static string NormAuth(IEnumerable<string> entries)
+    {
+        var parts = new List<string>();
+        foreach (var e in entries)
+        {
+            var body = e.Contains(' ') ? e[(e.IndexOf(' ') + 1)..] : "";   // drop attribute name
+            var pairs = System.Text.RegularExpressions.Regex.Matches(body, @"(\w+)=(.*?)(?=\s+\w+=|$)");
+            if (pairs.Count == 0)
+            {
+                parts.Add(string.IsNullOrWhiteSpace(body) ? "AUTHENTICATED" : body.Trim().ToUpperInvariant());
+                continue;
+            }
+            foreach (System.Text.RegularExpressions.Match m in pairs)
+            {
+                var k = m.Groups[1].Value.ToUpperInvariant();
+                var vals = m.Groups[2].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                            .Select(v => v.ToUpperInvariant()).OrderBy(v => v);
+                parts.Add($"{k}={string.Join(",", vals)}");
+            }
+        }
+        return string.Join("; ", parts.Distinct().OrderBy(p => p));
+    }
+
+    static string Show(string normalized) => normalized.Length == 0 ? "none" : normalized;
 
     static HashSet<string> ParamNames(ActionInfo a) =>
         a.Parameters.Select(p => p.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);

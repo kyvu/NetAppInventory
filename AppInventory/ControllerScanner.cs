@@ -150,7 +150,7 @@ public static class ControllerScanner
 
         // [AcceptVerbs(HttpVerbs.Post)] style
         var accept = m.GetCustomAttributesData().FirstOrDefault(a => a.AttributeType.Name == "AcceptVerbsAttribute");
-        if (accept != null) verbs.Add(string.Join("|", accept.ConstructorArguments.Select(a => a.Value?.ToString())));
+        if (accept != null) verbs.AddRange(DecodeAcceptVerbs(accept));
 
         if (verbs.Count == 0) verbs.Add("GET"); // MVC default when no verb attribute
 
@@ -164,6 +164,27 @@ public static class ControllerScanner
             AllowAnonymous: HasAttr(m, "AllowAnonymousAttribute"),
             Authorize: AuthInfo(m),
             Parameters: m.GetParameters().Select(BuildParam).ToList());
+    }
+
+    /// [AcceptVerbs(HttpVerbs.Get | HttpVerbs.Post)] (enum flags) or [AcceptVerbs("GET", "POST")] (string array).
+    static IEnumerable<string> DecodeAcceptVerbs(CustomAttributeData accept)
+    {
+        var flagNames = new (int Bit, string Verb)[] { (1, "GET"), (2, "POST"), (4, "PUT"), (8, "DELETE"), (16, "HEAD"), (32, "PATCH"), (64, "OPTIONS") };
+        foreach (var arg in accept.ConstructorArguments)
+        {
+            if (arg.Value is IEnumerable<CustomAttributeTypedArgument> items)          // params string[]
+            {
+                foreach (var i in items)
+                    if (i.Value != null) yield return i.Value.ToString()!.ToUpperInvariant();
+            }
+            else if (arg.Value is int flags)                                            // HttpVerbs enum
+            {
+                foreach (var (bit, verb) in flagNames)
+                    if ((flags & bit) != 0) yield return verb;
+            }
+            else if (arg.Value != null)
+                yield return arg.Value.ToString()!.ToUpperInvariant();
+        }
     }
 
     static ParamInfo BuildParam(ParameterInfo p)
