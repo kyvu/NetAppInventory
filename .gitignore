@@ -7,3 +7,4 @@ test-results/
 # Never commit real manifests or local settings overrides
 WebApp.IntegrationTests/manifests/*.json
 *.local.json
+WebApp.IntegrationTests/manifests/*.md

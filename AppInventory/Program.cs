@@ -63,8 +63,30 @@ int RunFromSettings()
     int rc = 0;
     try
     {
+        Manifest? current = null, legacy = null;
+
         if (!string.IsNullOrWhiteSpace(s.Assembly))
-            Write(Path.Combine(outDir, "manifest-app.json"), Build(s.Assembly, NullIfEmpty(s.Views), null, false));
+        {
+            current = Build(s.Assembly, NullIfEmpty(s.Views), null, false);
+            Write(Path.Combine(outDir, "manifest-app.json"), current);
+        }
+
+        if (!string.IsNullOrWhiteSpace(s.LegacyAssembly))
+        {
+            Console.WriteLine("\n-- Legacy app --");
+            legacy = Build(s.LegacyAssembly, NullIfEmpty(s.LegacyViews), null, false);
+            Write(Path.Combine(outDir, "manifest-legacy.json"), legacy);
+        }
+
+        if (current != null && legacy != null)
+        {
+            var reportPath = Path.Combine(outDir, "migration-compare.md");
+            var report = CompareReport.Build(legacy, current);
+            File.WriteAllText(reportPath, report);
+            Console.WriteLine("\n" + string.Join("\n", report.Split('\n').SkipWhile(l => !l.StartsWith("## Summary")).TakeWhile(l => !l.StartsWith("### ")).Where(l => l.Length > 0)));
+            foreach (var l in report.Split('\n').Where(l => l.StartsWith("## Views"))) Console.WriteLine(l);
+            Console.WriteLine($"Wrote {reportPath}");
+        }
 
         if (!string.IsNullOrWhiteSpace(s.SqlConnection) && !s.SqlConnection.Contains("YOUR_TEST_DB"))
             Write(Path.Combine(outDir, "manifest-sql.json"), Build(null, null, s.SqlConnection, s.CheckSqlHealth));
@@ -144,6 +166,8 @@ record InventorySettings
 {
     public string Assembly { get; init; } = "";
     public string Views { get; init; } = "";
+    public string LegacyAssembly { get; init; } = "";
+    public string LegacyViews { get; init; } = "";
     public string SqlConnection { get; init; } = "";
     public bool CheckSqlHealth { get; init; } = true;
     public string OutputFolder { get; init; } = @"..\..\..\..\WebApp.IntegrationTests\manifests";
